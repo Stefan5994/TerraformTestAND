@@ -95,23 +95,56 @@ resource "aws_route_table_association" "PrivRoutAssoc2" {
     route_table_id = aws_route_table.private_route.id
     subnet_id = aws_subnet.priv2.id
 }
+# Security group for instances provisioned from launch template - defined below
 
+resource "aws_security_group" "LT_EC2_SG_TF" {
+    description = "Allow HTTP and HTTPS traffic from any internet address"
+    vpc_id = aws_vpc.test_vpc.id
+    ingress {
+        description = "HTTP from the Load Balancer"
+        from_port = 80
+        to_port = 80
+        protocol = "tcp"    
+        security_groups = [aws_security_group.ALB_SG.id]
+    }
+    ingress {
+        description = "HTTPS from the Load Balancer"
+        from_port = 443
+        to_port = 443
+        protocol = "tcp"    
+        security_groups = [aws_security_group.ALB_SG.id]
+    }
+    egress {
+        description = "All traffic to the internet"
+        from_port = 0
+        to_port = 0
+        protocol = "-1"
+        cidr_blocks = [aws_vpc.test_vpc.cidr_block]
+    }
+    tags = {
+        Name = "LT_EC2_SG_TF"
+    }
+}
 # Launch template defined below
 
-#resource "aws_launch_template" "LaunchTemplate_TF" {
- #   name = "LT_TF"
-  #  description = "Launch template for instances to be launched with simple text and instance ID retrieval"
-   # image-id =     
-    #}
-#}
-
+resource "aws_launch_template" "LaunchTemplate_TF" {
+    name = "LT_TF"
+    description = "Launch template for instances to be launched with simple text and instance ID retrieval"
+    image_id = "ami-0915bcb5fa77e4892"
+    instance_type = "t2.micro"
+    vpc_security_group_ids = [aws_security_group.LT_EC2_SG_TF.id]
+}
 # Autoscaling group defined below 
 
-# resource "aws_autoscaling_group" "ASGTest" {
- #   min_size = 0
-  #  max_size = 0
-   # vpc_zone_identifier = [aws_subnet.priv1.id,aws_subnet.priv2.id]
-#}
+ resource "aws_autoscaling_group" "ASGTest" {
+    min_size = 0
+    max_size = 0
+    vpc_zone_identifier = [aws_subnet.priv1.id,aws_subnet.priv2.id]
+    launch_template {
+        id = aws_launch_template.LaunchTemplate_TF.id
+        version = aws_launch_template.LaunchTemplate_TF.latest_version
+    }
+}
 
 # Application Load Balancer defined below including corresponding Security Group
 
@@ -126,7 +159,7 @@ resource "aws_security_group" "ALB_SG" {
         cidr_blocks = ["0.0.0.0/0"]
     }   
     ingress {
-        description = "HTTPS from the internet"
+        description = "HTTP from the internet"
         from_port = 80
         to_port = 80
         protocol = "tcp"    
