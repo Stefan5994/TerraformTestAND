@@ -33,6 +33,7 @@ resource "aws_subnet" "pub1" {
     vpc_id = aws_vpc.test_vpc.id
     cidr_block = "10.5.3.0/24"
     availability_zone = "us-east-1a"
+    map_public_ip_on_launch = true
     tags = {
         Name = "PublicSubnet1_TF"
     }
@@ -41,6 +42,7 @@ resource "aws_subnet" "pub2" {
     vpc_id = aws_vpc.test_vpc.id
     cidr_block = "10.5.4.0/24"
     availability_zone = "us-east-1b"
+    map_public_ip_on_launch = true
     tags = {
         Name = "PublicSubnet2_TF"
     }
@@ -101,11 +103,18 @@ resource "aws_security_group" "LT_EC2_SG_TF" {
     description = "Allow HTTP and HTTPS traffic from any internet address"
     vpc_id = aws_vpc.test_vpc.id
     ingress {
-        description = "HTTP from the Load Balancer"
+        description = "HTTP from the Internet"
         from_port = 80
         to_port = 80
         protocol = "tcp"    
-        security_groups = [aws_security_group.ALB_SG.id]
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+    ingress {
+        description = "SSH from the Internet"
+        from_port = 22
+        to_port = 22
+        protocol = "tcp"    
+        cidr_blocks = ["0.0.0.0/0"]
     }
     ingress {
         description = "HTTPS from the Load Balancer"
@@ -119,7 +128,7 @@ resource "aws_security_group" "LT_EC2_SG_TF" {
         from_port = 0
         to_port = 0
         protocol = "-1"
-        cidr_blocks = [aws_vpc.test_vpc.cidr_block]
+        cidr_blocks = ["0.0.0.0/0"]
     }
     tags = {
         Name = "LT_EC2_SG_TF"
@@ -139,15 +148,13 @@ resource "aws_launch_template" "LaunchTemplate_TF" {
 
 data "template_file" "User_Data_TempFile" {
   template = <<EOF
-    #!/bin/bash
-    yum update -y
-    yum install httpd -y
-    systemctl start httpd
-    systemctl enable httpd
-    cd /var/www/html
-    InstID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-    AZID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
-    echo "<h1> This is IntsanceID </h1>" > index.txt
+#!/bin/sh
+yum -y install httpd php
+chkconfig httpd on
+systemctl start httpd.service
+cd /var/www/html
+wget https://s3-us-west-2.amazonaws.com/us-west-2-aws-training/awsu-spl/spl-03/scripts/examplefiles-elb.zip
+unzip examplefiles-elb.zip
   EOF
 }
 
@@ -156,12 +163,25 @@ data "template_file" "User_Data_TempFile" {
  resource "aws_autoscaling_group" "ASGTest" {
     min_size = 2
     max_size = 2
-    vpc_zone_identifier = [aws_subnet.priv1.id,aws_subnet.priv2.id]
-    target_group_arns = [aws_lb_target_group.ALB_TG_TF.id]z
+    vpc_zone_identifier = [aws_subnet.pub1.id,aws_subnet.pub2.id]
+    target_group_arns = [aws_lb_target_group.ALB_TG_TF.id]
     launch_template {
         id = aws_launch_template.LaunchTemplate_TF.id
         version = aws_launch_template.LaunchTemplate_TF.latest_version
     }
+
+}
+
+resource "aws_autoscaling_policy" "TargetTrackingPolicy_TF" {
+    name = "ASG_TargetTrackingPolicy_TF"
+    autoscaling_group_name = aws_autoscaling_group.ASGTest.name
+    policy_type = "TargetTrackingScaling"
+    target_tracking_configuration {
+    predefined_metric_specification {
+    predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+        target_value = 75.0
+  }
 }
 
 # Application Load Balancer defined below including corresponding Security Group
@@ -221,3 +241,8 @@ resource "aws_lb" "alb-TF" {
 
 }
 
+# CloudFront distribution configured below for HTTP redirection to HTTPS and increased security and performance
+
+#resource "aws_cloudfront_distribution" "CFront_TF" {
+#
+#}
