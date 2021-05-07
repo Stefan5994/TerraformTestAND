@@ -29,9 +29,17 @@ resource "aws_subnet" "priv2" {
         Name = "PrivateSubnet2_TF"
     }
 }
-resource "aws_subnet" "pub1" {
+resource "aws_subnet" "priv3" {
     vpc_id = aws_vpc.test_vpc.id
     cidr_block = "10.5.3.0/24"
+    availability_zone = "us-east-1b"
+    tags = {
+        Name = "PrivateSubnet3_TF"
+    }
+}
+resource "aws_subnet" "pub1" {
+    vpc_id = aws_vpc.test_vpc.id
+    cidr_block = "10.5.4.0/24"
     availability_zone = "us-east-1a"
     map_public_ip_on_launch = true
     tags = {
@@ -40,11 +48,20 @@ resource "aws_subnet" "pub1" {
 }
 resource "aws_subnet" "pub2" {
     vpc_id = aws_vpc.test_vpc.id
-    cidr_block = "10.5.4.0/24"
+    cidr_block = "10.5.5.0/24"
     availability_zone = "us-east-1b"
     map_public_ip_on_launch = true
     tags = {
         Name = "PublicSubnet2_TF"
+    }
+}
+resource "aws_subnet" "pub3" {
+    vpc_id = aws_vpc.test_vpc.id
+    cidr_block = "10.5.6.0/24"
+    availability_zone = "us-east-1c"
+    map_public_ip_on_launch = true
+    tags = {
+        Name = "PublicSubnet3_TF"
     }
 }
 
@@ -81,6 +98,11 @@ resource "aws_route_table_association" "PubRoutAssoc2" {
     subnet_id = aws_subnet.pub2.id
 }
 
+resource "aws_route_table_association" "PubRoutAssoc3" {
+    route_table_id = aws_route_table.public_route.id
+    subnet_id = aws_subnet.pub3.id
+}
+
 resource "aws_route_table" "private_route" {
     vpc_id = aws_vpc.test_vpc.id
     tags = {
@@ -96,6 +118,11 @@ resource "aws_route_table_association" "PrivRoutAssoc1" {
 resource "aws_route_table_association" "PrivRoutAssoc2" {
     route_table_id = aws_route_table.private_route.id
     subnet_id = aws_subnet.priv2.id
+}
+
+resource "aws_route_table_association" "PrivRoutAssoc3" {
+    route_table_id = aws_route_table.private_route.id
+    subnet_id = aws_subnet.priv3.id
 }
 # Security group for instances provisioned from launch template - defined below
 
@@ -162,8 +189,8 @@ unzip examplefiles-elb.zip
 
  resource "aws_autoscaling_group" "ASGTest" {
     min_size = 2
-    max_size = 2
-    vpc_zone_identifier = [aws_subnet.pub1.id,aws_subnet.pub2.id]
+    max_size = 6
+    vpc_zone_identifier = [aws_subnet.pub1.id,aws_subnet.pub2.id,aws_subnet.pub3.id]
     target_group_arns = [aws_lb_target_group.ALB_TG_TF.id]
     launch_template {
         id = aws_launch_template.LaunchTemplate_TF.id
@@ -237,12 +264,67 @@ resource "aws_lb" "alb-TF" {
     internal = false
     load_balancer_type = "application"
     security_groups = [aws_security_group.ALB_SG.id]
-    subnets = [aws_subnet.pub1.id,aws_subnet.pub2.id]
+    subnets = [aws_subnet.pub1.id,aws_subnet.pub2.id,aws_subnet.pub3.id]
 
 }
 
 # CloudFront distribution configured below for HTTP redirection to HTTPS and increased security and performance
 
-#resource "aws_cloudfront_distribution" "CFront_TF" {
-#
-#}
+resource "aws_cloudfront_distribution" "CFront_TF" {
+  origin {
+    domain_name = aws_lb.alb-TF.dns_name
+    origin_id   = aws_lb.alb-TF.id
+    custom_origin_config {
+        http_port = 80
+        https_port = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols = ["TLSv1"]
+    }
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+#  comment             = "Some comment"
+  default_root_object = "index.php"
+
+  default_cache_behavior {
+    forwarded_values {
+        query_string = false
+
+    cookies {
+        forward = "none"
+      }
+    }  
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = aws_lb.alb-TF.id
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+
+  price_class = "PriceClass_100"
+
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "whitelist"
+      locations        = ["US", "CA", "GB", "DE"]
+    }
+  }
+
+  tags = {
+    Name = "CloudFront_TF"
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+output "CloudFront_Domain_Name" {
+  value = aws_cloudfront_distribution.CFront_TF.domain_name
+}
