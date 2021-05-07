@@ -133,13 +133,31 @@ resource "aws_launch_template" "LaunchTemplate_TF" {
     image_id = "ami-0915bcb5fa77e4892"
     instance_type = "t2.micro"
     vpc_security_group_ids = [aws_security_group.LT_EC2_SG_TF.id]
+    user_data = "${base64encode(data.template_file.User_Data_TempFile.rendered)}"
+
+    }
+
+data "template_file" "User_Data_TempFile" {
+  template = <<EOF
+    #!/bin/bash
+    yum update -y
+    yum install httpd -y
+    systemctl start httpd
+    systemctl enable httpd
+    cd /var/www/html
+    InstID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+    AZID=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone)
+    echo "<h1> This is IntsanceID </h1>" > index.txt
+  EOF
 }
+
 # Autoscaling group defined below 
 
  resource "aws_autoscaling_group" "ASGTest" {
-    min_size = 0
-    max_size = 0
+    min_size = 2
+    max_size = 2
     vpc_zone_identifier = [aws_subnet.priv1.id,aws_subnet.priv2.id]
+    target_group_arns = [aws_lb_target_group.ALB_TG_TF.id]z
     launch_template {
         id = aws_launch_template.LaunchTemplate_TF.id
         version = aws_launch_template.LaunchTemplate_TF.latest_version
