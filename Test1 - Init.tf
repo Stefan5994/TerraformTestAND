@@ -130,19 +130,19 @@ resource "aws_security_group" "LT_EC2_SG_TF" {
     description = "Allow HTTP and HTTPS traffic from any internet address"
     vpc_id = aws_vpc.test_vpc.id
     ingress {
-        description = "HTTP from the Internet"
+        description = "HTTP from the Load Balancer"
         from_port = 80
         to_port = 80
         protocol = "tcp"    
-        cidr_blocks = ["0.0.0.0/0"]
+      security_groups = [aws_security_group.ALB_SG.id]
     }
-    ingress {
-        description = "SSH from the Internet"
-        from_port = 22
-        to_port = 22
-        protocol = "tcp"    
-        cidr_blocks = ["0.0.0.0/0"]
-    }
+    #ingress {
+     #   description = "SSH from the Internet for EC2 Connect"
+      #  from_port = 22
+       # to_port = 22
+        #protocol = "tcp"    
+        #cidr_blocks = ["0.0.0.0/0"]
+    #}
     ingress {
         description = "HTTPS from the Load Balancer"
         from_port = 443
